@@ -20,10 +20,9 @@ type (
 	Projection struct {
 		Group   string
 		Handler port.EventHandler
-		// Fields are free-form: scenarios type-assert what they need,
-		// e.g. Search.(port.OrderSearch).
-		Search    port.OrderSearch
-		Analytics port.SalesAnalytics
+		// Read is the read side of the projection (your port from step 10/11).
+		// Scenarios type-assert it: app.Projections["search"].Read.(port.OrderSearch).
+		Read any
 	}
 	ProjectionFactory func(t *testing.T, inf *Infra) Projection
 )

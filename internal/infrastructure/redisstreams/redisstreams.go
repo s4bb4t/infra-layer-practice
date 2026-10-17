@@ -8,6 +8,8 @@ package redisstreams
 import (
 	"context"
 	"fmt"
+	"io"
+	"sync"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-redisstream/pkg/redisstream"
@@ -29,6 +31,9 @@ type Broker struct {
 	logger watermill.LoggerAdapter
 	pub    *redisstream.Publisher
 	watermillx.Publisher
+
+	mu   sync.Mutex
+	subs []io.Closer
 }
 
 func New(rdb goredis.UniversalClient, topic string, logger watermill.LoggerAdapter) (*Broker, error) {
@@ -52,9 +57,28 @@ func New(rdb goredis.UniversalClient, topic string, logger watermill.LoggerAdapt
 //   - выбери OldestId: "0" или "$"? Что получит НОВАЯ группа в каждом случае
 //     и что из этого совпадает с поведением RabbitMQ-очереди? (ответ — в ADR);
 //   - sub.Subscribe(ctx, b.topic) и watermillx.Consume в горутине;
-//   - не забудь закрыть subscriber, когда канал сообщений закроется.
+//   - зарегистрируй subscriber через b.track(sub), чтобы Close() его остановил,
+//     и закрой его сам, когда канал сообщений закроется.
 func (b *Broker) Subscribe(ctx context.Context, group string, h port.EventHandler) error {
 	return todo.Step("07")
 }
 
-func (b *Broker) Close() error { return b.pub.Close() }
+//nolint:unused // used by Subscribe once step 07 is done
+func (b *Broker) track(sub io.Closer) {
+	b.mu.Lock()
+	b.subs = append(b.subs, sub)
+	b.mu.Unlock()
+}
+
+// Close stops every subscription of this broker, then the publisher.
+// Without it, subscribers keep reconnecting after the broker is gone.
+func (b *Broker) Close() error {
+	b.mu.Lock()
+	subs := b.subs
+	b.subs = nil
+	b.mu.Unlock()
+	for _, s := range subs {
+		_ = s.Close()
+	}
+	return b.pub.Close()
+}

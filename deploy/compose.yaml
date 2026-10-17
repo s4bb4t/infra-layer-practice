@@ -1,0 +1,106 @@
+# Локальная инфраструктура для ручного запуска сервиса (шаг 14 и эксперименты).
+# Тестам она не нужна: они поднимают контейнеры сами через testcontainers.
+#
+#   make infra-up PROFILES="db broker obs"
+#   make infra-down
+#
+# Профили: db, broker, search, analytics, obs.
+
+name: orders
+
+services:
+  postgres:
+    profiles: [db]
+    image: postgres:17-alpine
+    environment: { POSTGRES_DB: orders, POSTGRES_USER: orders, POSTGRES_PASSWORD: orders }
+    ports: ["5432:5432"]
+
+  mysql:
+    profiles: [db]
+    image: mysql:8.4
+    environment: { MYSQL_DATABASE: orders, MYSQL_USER: orders, MYSQL_PASSWORD: orders, MYSQL_ROOT_PASSWORD: root }
+    ports: ["3306:3306"]
+
+  mongo:
+    profiles: [db]
+    image: mongo:8.2
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports: ["27017:27017"]
+    healthcheck:
+      # Initiates the single-node replica set on first start.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]}).ok }"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    profiles: [db, broker]
+    image: redis:8-alpine
+    ports: ["6379:6379"]
+
+  rabbitmq:
+    profiles: [broker]
+    image: rabbitmq:4-management-alpine
+    ports: ["5672:5672", "15672:15672"] # UI: http://localhost:15672 guest/guest
+
+  kafka:
+    profiles: [broker]
+    image: apache/kafka:3.9.1
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  nats:
+    profiles: [broker]
+    image: nats:2-alpine
+    command: ["-js", "-m", "8222"]
+    ports: ["4222:4222", "8222:8222"]
+
+  opensearch:
+    profiles: [search]
+    image: opensearchproject/opensearch:2.19.2
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ports: ["9200:9200"]
+
+  clickhouse:
+    profiles: [analytics]
+    image: clickhouse/clickhouse-server:25.8-alpine
+    environment: { CLICKHOUSE_USER: orders, CLICKHOUSE_PASSWORD: orders }
+    ports: ["9000:9000", "8123:8123"]
+
+  jaeger:
+    profiles: [obs]
+    image: jaegertracing/jaeger:2.10.0
+    ports:
+      - "16686:16686" # UI: http://localhost:16686
+      - "4318:4318"   # OTLP HTTP: ORDERS_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+
+  prometheus:
+    profiles: [obs]
+    image: prom/prometheus:v3.6.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+    ports: ["9090:9090"] # UI: http://localhost:9090
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+configs:
+  prometheus:
+    content: |
+      global:
+        scrape_interval: 5s
+      scrape_configs:
+        - job_name: orders
+          static_configs:
+            - targets: ["host.docker.internal:8080"] # the service runs on the host: make run

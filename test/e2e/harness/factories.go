@@ -5,6 +5,7 @@ package harness
 import (
 	"context"
 	"database/sql"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -106,8 +107,12 @@ func MongoStore(t *testing.T, inf *Infra) contracttest.Store {
 }
 
 func RabbitBroker(t *testing.T, inf *Infra, topic string) contracttest.Broker {
+	return RabbitBrokerAt(t, inf.Rabbit(t), topic)
+}
+
+func RabbitBrokerAt(t *testing.T, uri, topic string) contracttest.Broker {
 	t.Helper()
-	b, err := rabbit.New(inf.Rabbit(t), topic, nil)
+	b, err := rabbit.New(uri, topic, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,14 +145,14 @@ func KafkaBroker(t *testing.T, inf *Infra, topic string) contracttest.Broker {
 // dbName turns a test name into a valid, unique database/topic name.
 // Postgres limits identifiers to 63 bytes, so the readable part is cut.
 func dbName(t *testing.T) string {
-	name := strings.ToLower(sanitize.Replace(t.Name()))
+	name := invalidName.ReplaceAllString(strings.ToLower(t.Name()), "_")
 	if len(name) > 40 {
 		name = name[len(name)-40:]
 	}
 	return "t_" + strings.Trim(name, "_") + "_" + suffix()
 }
 
-var sanitize = strings.NewReplacer("/", "_", "-", "_", " ", "_", "+", "_", ".", "_", ":", "_", "=", "_")
+var invalidName = regexp.MustCompile(`[^a-z0-9_]+`)
 
 func replaceDB(dsn, db string) string {
 	// postgres://user:pass@host:port/orders?sslmode=disable

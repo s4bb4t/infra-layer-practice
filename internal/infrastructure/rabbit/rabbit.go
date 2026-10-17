@@ -8,6 +8,8 @@ package rabbit
 import (
 	"context"
 	"fmt"
+	"io"
+	"sync"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill-amqp/v3/pkg/amqp"
@@ -27,6 +29,9 @@ type Broker struct {
 	logger watermill.LoggerAdapter
 	pub    *amqp.Publisher
 	watermillx.Publisher
+
+	mu   sync.Mutex
+	subs []io.Closer
 }
 
 func New(uri, topic string, logger watermill.LoggerAdapter) (*Broker, error) {
@@ -57,6 +62,7 @@ func (b *Broker) Subscribe(ctx context.Context, group string, h port.EventHandle
 		_ = sub.Close()
 		return fmt.Errorf("subscribe: %w", err)
 	}
+	b.track(sub)
 	go func() {
 		watermillx.Consume(ctx, msgs, h)
 		_ = sub.Close()
@@ -64,4 +70,21 @@ func (b *Broker) Subscribe(ctx context.Context, group string, h port.EventHandle
 	return nil
 }
 
-func (b *Broker) Close() error { return b.pub.Close() }
+func (b *Broker) track(sub io.Closer) {
+	b.mu.Lock()
+	b.subs = append(b.subs, sub)
+	b.mu.Unlock()
+}
+
+// Close stops every subscription of this broker, then the publisher.
+// Without it, subscribers keep reconnecting after the broker is gone.
+func (b *Broker) Close() error {
+	b.mu.Lock()
+	subs := b.subs
+	b.subs = nil
+	b.mu.Unlock()
+	for _, s := range subs {
+		_ = s.Close()
+	}
+	return b.pub.Close()
+}

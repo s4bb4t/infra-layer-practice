@@ -6,15 +6,16 @@
 //
 // Kafka has no per-message ack/nack: a consumer commits an OFFSET, "everything
 // before this point is done". So a failed event cannot simply be "nacked" while
-// later ones go on; this adapter retries it in place with backoff.
+// later ones go on.
+//
+// Шаг 08: New (продюсер + создание топика) и контракт-тест даны; Publish и
+// Subscribe — твои.
 package kafka
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/s4bb4t/infra-layer-practice/internal/app/domain"
 	"github.com/s4bb4t/infra-layer-practice/internal/app/port"
+	"github.com/s4bb4t/infra-layer-practice/internal/todo"
 )
 
 var (
@@ -60,71 +62,27 @@ func New(ctx context.Context, brokers []string, topic string) (*Broker, error) {
 	return &Broker{brokers: brokers, topic: topic, prod: prod}, nil
 }
 
+// Publish — TODO(step-08).
+//   - JSON-конверт события в Value;
+//   - что положить в Key и почему? (подсказка: порядок событий одного заказа);
+//   - ProduceSync или Produce с callback — в чём разница для outbox relay?
 func (b *Broker) Publish(ctx context.Context, events ...domain.Event) error {
-	records := make([]*kgo.Record, len(events))
-	for i, e := range events {
-		val, err := json.Marshal(e)
-		if err != nil {
-			return err
-		}
-		records[i] = &kgo.Record{
-			Key:     []byte(e.AggregateID),
-			Value:   val,
-			Headers: []kgo.RecordHeader{{Key: "type", Value: []byte(e.Type)}},
-		}
-	}
-	return b.prod.ProduceSync(ctx, records...).FirstErr()
+	return todo.Step("08")
 }
 
-// Subscribe joins the group in the background. Readiness is guaranteed by
-// ConsumeResetOffset(AtStart): a group without committed offsets reads the
-// topic from the beginning, so nothing published after this call is missed
-// even if the join takes a few seconds.
+// Subscribe — TODO(step-08).
+//
+// Контракт: «событие, опубликованное ПОСЛЕ возврата Subscribe, дойдёт до группы».
+// Вход в consumer group в Kafka асинхронный и может занять секунды. Как выполнить
+// контракт, не дожидаясь rebalance? (подсказка: kgo.ConsumeResetOffset)
+//
+// В Kafka нет nack на сообщение — только commit позиции. Что делать, если
+// обработчик вернул ошибку? Варианты и их цена — в ADR.
+//
+// Не забудь: автокоммит offset'ов коммитит то, что ты ПОЛУЧИЛ, а не то, что
+// ОБРАБОТАЛ. Подходит ли он для at-least-once?
 func (b *Broker) Subscribe(ctx context.Context, group string, h port.EventHandler) error {
-	cl, err := kgo.NewClient(
-		kgo.SeedBrokers(b.brokers...),
-		kgo.ConsumerGroup(group),
-		kgo.ConsumeTopics(b.topic),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
-		kgo.DisableAutoCommit(), // commit only what was handled
-		kgo.BlockRebalanceOnPoll(),
-	)
-	if err != nil {
-		return fmt.Errorf("kafka consumer: %w", err)
-	}
-	go b.consume(ctx, cl, h)
-	return nil
-}
-
-func (b *Broker) consume(ctx context.Context, cl *kgo.Client, h port.EventHandler) {
-	defer cl.Close()
-	for {
-		fetches := cl.PollFetches(ctx)
-		if ctx.Err() != nil || fetches.IsClientClosed() {
-			return
-		}
-		fetches.EachRecord(func(r *kgo.Record) {
-			var e domain.Event
-			if err := json.Unmarshal(r.Value, &e); err != nil {
-				return // poison record: skip it, it will never decode
-			}
-			for attempt := 0; ctx.Err() == nil; attempt++ {
-				if err := h(ctx, e); err == nil {
-					return
-				}
-				time.Sleep(backoff(attempt))
-			}
-		})
-		if ctx.Err() == nil {
-			_ = cl.CommitUncommittedOffsets(ctx)
-		}
-		cl.AllowRebalance()
-	}
-}
-
-func backoff(attempt int) time.Duration {
-	d := 50 * time.Millisecond << min(attempt, 6)
-	return min(d, 3*time.Second)
+	return todo.Step("08")
 }
 
 func (b *Broker) Close() error {
