@@ -1,0 +1,28 @@
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - errorlint     # errors.Is/As вместо == и type switch по ошибкам
+    - gocritic
+    - misspell
+    - nilerr
+    - noctx         # HTTP/SQL без контекста
+    - revive
+    - rowserrcheck  # забытый rows.Err()
+    - sqlclosecheck # незакрытые rows/stmt
+    - unconvert
+    - unparam
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

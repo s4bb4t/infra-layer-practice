@@ -1,0 +1,6 @@
+#!/bin/sh
+# Ставится командой `make hooks`. Не пускает push, пока make check не зелёный.
+# Обойти можно через `git push --no-verify`, но CI всё равно упадёт.
+set -e
+echo "pre-push: make check (fmt, vet, lint, unit, integration)..."
+make check

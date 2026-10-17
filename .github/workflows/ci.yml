@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Дополнительно запустить: e2e, chaos или all"
+        required: false
+        default: ""
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make fmt-check
+      - run: make vet
+      - run: make lint
+      - run: make test
+      - run: make integration
+
+  e2e:
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'e2e' || inputs.suite == 'all')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make e2e
+
+  chaos:
+    if: github.event_name == 'workflow_dispatch' && (inputs.suite == 'chaos' || inputs.suite == 'all')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make chaos
