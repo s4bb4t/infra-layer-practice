@@ -70,4 +70,4 @@ internal/app/domain               ──imports──▶  (только stdlib)
 
 - Martin Kleppmann, *Designing Data-Intensive Applications* — главы 1–3, 5–7, 11. Если читать одну книгу по теме, то эту.
 - Alistair Cockburn, [Hexagonal Architecture](https://alistair.cockburn.us/hexagonal-architecture/)
-- [Jepsen](https://jepsen.io/analyses) — как базы и брокеры на самом деле ведут себя при сбоях
+- [Jepsen](https://jepsen.io/analyses) — как базы и брокеры на самом деле ведут себя при сбоях **(это читать необязательно, только если хочется узнать, как ломаются системы; отчёты местами старые)**
